@@ -1,0 +1,27 @@
+# Production-shaped overlay for EKS. CI sets image tags with `kustomize edit set image`.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+images:
+  - name: ghcr.io/vkprogrammer-001/orderflow/order-service
+    newTag: latest
+  - name: ghcr.io/vkprogrammer-001/orderflow/inventory-service
+    newTag: latest
+  - name: ghcr.io/vkprogrammer-001/orderflow/payment-service
+    newTag: latest
+  - name: ghcr.io/vkprogrammer-001/orderflow/audit-service
+    newTag: latest
+  - name: ghcr.io/vkprogrammer-001/orderflow/console
+    newTag: latest
+patches:
+  - target: { kind: Deployment, name: "(inventory|payment)-service" }
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+  - target: { kind: ConfigMap, name: orderflow-config }
+    patch: |-
+      - op: add
+        path: /data/SPRING_PROFILES_ACTIVE
+        value: prod

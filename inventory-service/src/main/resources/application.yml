@@ -1,0 +1,62 @@
+server:
+  port: 8082
+  shutdown: graceful
+
+spring:
+  application:
+    name: inventory-service
+  threads:
+    virtual:
+      # Off on Java 21: the Kafka client and parts of JDBC block inside synchronized code, which pins
+      # virtual threads to their carrier threads and starves the saga consumers (fixed in JDK 24, JEP 491).
+      enabled: ${VIRTUAL_THREADS:false}
+  task:
+    scheduling:
+      pool:
+        size: 2              # outbox relay and saga watchdog don't queue behind each other
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:inventory}
+    username: ${DB_USER:orderflow}
+    password: ${DB_PASSWORD:orderflow}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:20}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate.jdbc.time_zone: UTC
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  cache:
+    type: redis
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    producer:
+      acks: all
+      properties:
+        enable.idempotence: true
+        linger.ms: 5
+    consumer:
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+    listener:
+      # Commit offsets once per poll, not once per record. Safe because every handler is idempotent
+      # (inbox table / upsert by event id): a crash just redelivers a batch that is then skipped.
+      ack-mode: batch
+      concurrency: 6         # one consumer thread per partition
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}

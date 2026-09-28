@@ -1,0 +1,7 @@
+**/target
+.git
+.github
+k8s
+tools
+console
+*.md

@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service
+  labels: { app.kubernetes.io/name: order-service, app.kubernetes.io/part-of: orderflow }
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }   # zero-downtime rollouts
+  selector:
+    matchLabels: { app.kubernetes.io/name: order-service }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: order-service, app.kubernetes.io/part-of: orderflow }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8081"
+    spec:
+      terminationGracePeriodSeconds: 40
+      securityContext: { runAsNonRoot: true, runAsUser: 100, fsGroup: 101, seccompProfile: { type: RuntimeDefault } }
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app.kubernetes.io/name: order-service } }
+      containers:
+        - name: app
+          image: ghcr.io/vkprogrammer-001/orderflow/order-service:latest
+          ports: [{ name: http, containerPort: 8081 }]
+          envFrom:
+            - configMapRef: { name: orderflow-config }
+          env:
+            - name: DB_NAME
+              value: "orders"
+            - name: DB_USER
+              valueFrom: { secretKeyRef: { name: orderflow-secrets, key: db-user } }
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: orderflow-secrets, key: db-password } }
+            - name: ORDERFLOW_API_KEY
+              valueFrom: { secretKeyRef: { name: orderflow-secrets, key: api-key } }
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { memory: 1Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          startupProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: http }
+            periodSeconds: 5
+          lifecycle:
+            preStop:
+              exec: { command: ["sh", "-c", "sleep 10"] }   # let the load balancer drain before shutdown
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+  labels: { app.kubernetes.io/name: order-service }
+spec:
+  selector: { app.kubernetes.io/name: order-service }
+  ports: [{ name: http, port: 8081, targetPort: http }]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: order-service
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: order-service }

@@ -1,0 +1,41 @@
+# Edge proxy for the console. It holds the service API key, so the browser never sees it,
+# rate-limits order placement, and exposes only health probes from actuator.
+limit_req_zone $binary_remote_addr zone=orders:10m rate=1000r/s;
+
+# Upstream names become the Host header sent to Tomcat, which rejects '_' in host names (HTTP 400).
+upstream order-upstream     { server order-service:8081;     keepalive 32; }
+upstream inventory-upstream { server inventory-service:8082; keepalive 16; }
+upstream payment-upstream   { server payment-service:8083;   keepalive 16; }
+upstream audit-upstream     { server audit-service:8084;     keepalive 16; }
+
+server {
+    listen 8080;
+    server_tokens off;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy no-referrer always;
+    add_header Content-Security-Policy "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'" always;
+
+    location = / {
+        root /usr/share/nginx/html;
+        try_files /index.html =404;
+    }
+
+    # Only health endpoints leave the cluster; metrics and env stay internal.
+    location ~ ^/(order|inventory|payment|audit)/actuator/(?!health) {
+        return 404;
+    }
+
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-API-Key "${ORDERFLOW_API_KEY}";
+
+    location /order/ {
+        limit_req zone=orders burst=2000 nodelay;
+        proxy_pass http://order-upstream/;
+    }
+    location /inventory/ { proxy_pass http://inventory-upstream/; }
+    location /payment/   { proxy_pass http://payment-upstream/; }
+    location /audit/     { proxy_pass http://audit-upstream/; }
+}

@@ -1,0 +1,16 @@
+# The API tier scales on CPU. Kafka consumers scale up to the partition count (6), beyond which
+# extra replicas sit idle, so maxReplicas matches partitions.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: order-service
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: order-service }
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 65 } }
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300

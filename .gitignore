@@ -1,0 +1,9 @@
+target/
+*.iml
+.idea/
+.vscode/
+.DS_Store
+tools/loadgen/loadgen
+
+# Personal notes, kept out of the public repo
+RESUME.md

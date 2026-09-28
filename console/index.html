@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OrderFlow console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --rack: #D9DFE3;
+  --rack-line: #C3CBD1;
+  --paper: #F7F9F6;
+  --paper-edge: #E4E8E4;
+  --ink: #1D2A33;
+  --ink-soft: #52616C;
+  --holding: #E3A92F;
+  --cleared: #2E8A67;
+  --returned: #B0445B;
+  --refused: #7B8893;
+  --signal: #1F5FAD;
+  --signal-ink: #FFFFFF;
+  --shadow: 0 1px 0 rgba(29, 42, 51, .12), 0 2px 6px rgba(29, 42, 51, .06);
+  --condensed: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --body: "Barlow", system-ui, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --rack: #1C2429; --rack-line: #2C363D; --paper: #27313A; --paper-edge: #34404A;
+    --ink: #E5EBEE; --ink-soft: #A2B0BA; --holding: #F0B845; --cleared: #4DB58C;
+    --returned: #D96A80; --refused: #8E9BA5; --signal: #6FA3E8; --signal-ink: #0F1E30;
+    --shadow: 0 1px 0 rgba(0,0,0,.35); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --rack: #1C2429; --rack-line: #2C363D; --paper: #27313A; --paper-edge: #34404A;
+  --ink: #E5EBEE; --ink-soft: #A2B0BA; --holding: #F0B845; --cleared: #4DB58C;
+  --returned: #D96A80; --refused: #8E9BA5; --signal: #6FA3E8; --signal-ink: #0F1E30;
+  --shadow: 0 1px 0 rgba(0,0,0,.35); color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--rack); color: var(--ink);
+  font: 400 16px/1.5 var(--body);
+}
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--signal); outline-offset: 2px; }
+
+.top {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+  gap: 8px 24px; padding: 20px 32px 12px; max-width: 1280px; margin: 0 auto;
+}
+.top h1 { margin: 0; font: 700 28px/1.1 var(--condensed); letter-spacing: .01em; }
+.top h1 span { font-weight: 500; color: var(--ink-soft); }
+.health { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0; padding: 0; list-style: none;
+  font: 500 15px/1.4 var(--condensed); color: var(--ink-soft); }
+.health li::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  margin-right: 6px; background: var(--refused); vertical-align: 1px; }
+.health li.up::before { background: var(--cleared); }
+.health li.down::before { background: var(--returned); }
+
+.notice { max-width: 1280px; margin: 0 auto 8px; padding: 0 32px; color: var(--ink-soft); font-size: 15px; }
+.notice p { margin: 0; padding: 8px 12px; border-left: 3px solid var(--holding); background: var(--paper); }
+
+.layout { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 24px;
+  max-width: 1280px; margin: 0 auto; padding: 8px 32px 48px; }
+
+/* ---------- composer ---------- */
+.composer { background: var(--paper); border-radius: 6px; padding: 20px; box-shadow: var(--shadow);
+  align-self: start; position: sticky; top: 16px; }
+.composer h2, .rack h2 { margin: 0 0 12px; font: 600 20px/1.2 var(--condensed); }
+.field { margin: 0 0 16px; border: 0; padding: 0; }
+.field > label, .field > legend { display: block; margin-bottom: 6px; font-weight: 500; font-size: 15px; }
+.text { width: 100%; padding: 8px 10px; border: 1px solid var(--rack-line); border-radius: 4px; background: transparent; }
+.methods { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--rack-line); border-radius: 4px; overflow: hidden; }
+.methods label { position: relative; text-align: center; padding: 6px 4px; cursor: pointer; line-height: 1.2; }
+.methods label + label { border-left: 1px solid var(--rack-line); }
+.methods input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.methods small { display: block; color: var(--ink-soft); font-size: 12px; }
+.methods label:has(input:checked) { background: var(--signal); color: var(--signal-ink); }
+.methods label:has(input:checked) small { color: inherit; opacity: .85; }
+.methods label:has(input:focus-visible) { outline: 3px solid var(--signal); outline-offset: -3px; }
+
+.products { list-style: none; margin: 0; padding: 0; }
+.products li { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center;
+  padding: 8px 0; border-top: 1px solid var(--paper-edge); }
+.products .name { font-size: 15px; line-height: 1.25; }
+.products .meta { grid-column: 1; font: 500 14px/1.2 var(--condensed); color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.products .meta.low { color: var(--returned); }
+.stepper { grid-row: 1 / span 2; grid-column: 2; display: flex; align-items: center; border: 1px solid var(--rack-line); border-radius: 4px; }
+.stepper button { width: 32px; height: 32px; border: 0; background: none; cursor: pointer; font-size: 18px; line-height: 1; }
+.stepper button:disabled { opacity: .35; cursor: default; }
+.stepper output { min-width: 22px; text-align: center; font: 600 17px/1 var(--condensed); font-variant-numeric: tabular-nums; }
+
+.estimate { display: flex; justify-content: space-between; align-items: baseline; margin: 12px 0 2px;
+  font: 600 20px/1.2 var(--condensed); font-variant-numeric: tabular-nums; }
+.estimate + p { margin: 0 0 16px; font-size: 13px; color: var(--ink-soft); }
+.primary { width: 100%; padding: 10px 14px; border: 0; border-radius: 4px; background: var(--signal);
+  color: var(--signal-ink); font-weight: 600; cursor: pointer; }
+.primary:disabled { opacity: .45; cursor: default; }
+.quiet { margin-top: 10px; padding: 4px 0; border: 0; background: none; color: var(--signal);
+  font-size: 14px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.quiet:disabled { color: var(--ink-soft); text-decoration: none; cursor: default; }
+.feedback { min-height: 1.5em; margin: 8px 0 0; font-size: 14px; }
+.feedback.error { color: var(--returned); }
+.hints { margin: 16px 0 0; padding: 12px 0 0; border-top: 1px solid var(--paper-edge); font-size: 13px; color: var(--ink-soft); }
+.hints p { margin: 0 0 6px; }
+
+/* ---------- rack of strips ---------- */
+.rack-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.rack-head p { margin: 0 0 12px; font-size: 14px; color: var(--ink-soft); }
+.strips { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.empty { padding: 32px 20px; border: 2px dashed var(--rack-line); border-radius: 6px; color: var(--ink-soft); }
+
+.strip { --state: var(--holding); background: var(--paper); border-radius: 3px; box-shadow: var(--shadow);
+  border-left: 10px solid var(--state); }
+.strip[data-state="cleared"] { --state: var(--cleared); }
+.strip[data-state="returned"] { --state: var(--returned); }
+.strip[data-state="refused"] { --state: var(--refused); }
+.strip.arriving { animation: slot .45s cubic-bezier(.2, .8, .2, 1); }
+@keyframes slot { from { transform: translateY(-14px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+.strip-head { display: grid; width: 100%; grid-template-columns: 112px 84px minmax(0, 1fr) 116px;
+  align-items: stretch; border: 0; padding: 0; background: none; text-align: left; cursor: pointer; }
+.strip-head > * { padding: 8px 12px; }
+.strip-head > * + * { border-left: 1px solid var(--paper-edge); }
+.ident b { display: block; font: 700 20px/1.1 var(--condensed); letter-spacing: .04em; }
+.ident small, .method small { display: block; font-size: 13px; color: var(--ink-soft); line-height: 1.3;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.method { font: 600 16px/1.1 var(--condensed); align-self: center; }
+.amount { font: 600 20px/1.1 var(--condensed); text-align: right; font-variant-numeric: tabular-nums; align-self: center; }
+.amount small { display: block; font: 400 12px/1.3 var(--body); color: var(--ink-soft); }
+
+.steps { list-style: none; margin: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; align-items: center; }
+.steps li { position: relative; padding: 4px 6px 4px 18px; border-radius: 2px; font: 500 15px/1.2 var(--condensed);
+  color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.steps li::before { content: ""; position: absolute; left: 5px; top: 50%; width: 8px; height: 8px; margin-top: -4px;
+  border-radius: 50%; border: 1.5px solid currentColor; }
+.steps li.done { color: var(--ink); }
+.steps li.done::before { background: var(--cleared); border-color: var(--cleared); }
+.steps li.now { color: var(--ink); background: color-mix(in srgb, var(--holding) 22%, transparent); }
+.steps li.now::before { border-color: var(--holding); background: var(--holding); }
+.steps li.failed { color: var(--returned); text-decoration: line-through; text-decoration-thickness: 1.5px; }
+.steps li.failed::before { border-color: var(--returned); background: var(--returned); }
+.steps li.returned { color: var(--ink); }
+.steps li.returned::before { background: var(--returned); border-color: var(--returned); }
+.steps li.skipped { opacity: .45; }
+
+.reason { margin: 0; padding: 0 12px 8px 208px; font-size: 14px; color: var(--ink-soft); }
+.strip[data-state="returned"] .reason, .strip[data-state="refused"] .reason { color: var(--ink); }
+
+.trail { margin: 0 12px 12px; padding: 10px 12px; border-top: 1px solid var(--paper-edge); }
+.trail h3 { margin: 0 0 6px; font: 600 16px/1.2 var(--condensed); }
+.trail ol { list-style: none; margin: 0; padding: 0; font-size: 14px; }
+.trail li { display: grid; grid-template-columns: 70px minmax(0, 1fr) auto; gap: 12px; padding: 3px 0; }
+.trail time { font: 500 14px/1.4 var(--condensed); font-variant-numeric: tabular-nums; color: var(--ink-soft); text-align: right; }
+.trail .who { color: var(--ink-soft); }
+.trail .cmd { font-weight: 600; }
+
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; padding: 8px 16px 40px; }
+  .top, .notice { padding-left: 16px; padding-right: 16px; }
+  .composer { position: static; }
+}
+@media (max-width: 620px) {
+  .strip-head { grid-template-columns: 1fr auto; }
+  .strip-head > * + * { border-left: 0; }
+  .method { display: none; }
+  .steps { grid-column: 1 / -1; grid-row: 2; grid-template-columns: repeat(2, minmax(0, 1fr)); padding-top: 0; }
+  .reason { padding-left: 12px; }
+  .trail li { grid-template-columns: 56px minmax(0, 1fr) auto; gap: 8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .strip.arriving { animation: none; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>OrderFlow <span>console</span></h1>
+  <ul class="health" id="health" aria-label="Service health">
+    <li data-svc="order">Orders</li><li data-svc="inventory">Inventory</li>
+    <li data-svc="payment">Payments</li><li data-svc="audit">Audit</li>
+  </ul>
+</header>
+<div class="notice" id="notice" hidden><p></p></div>
+
+<main class="layout">
+  <section class="composer" aria-labelledby="compose-title">
+    <h2 id="compose-title">Place an order</h2>
+    <form id="order-form" novalidate>
+      <div class="field">
+        <label for="customer">Customer ID</label>
+        <input class="text" id="customer" name="customer" autocomplete="off" pattern="[A-Za-z0-9_\-]+" maxlength="64" required>
+      </div>
+      <fieldset class="field">
+        <legend>Pay with</legend>
+        <div class="methods">
+          <label><input type="radio" name="method" value="CARD" checked>Card<small>up to $2,500</small></label>
+          <label><input type="radio" name="method" value="UPI">UPI<small>up to $1,000</small></label>
+          <label><input type="radio" name="method" value="WALLET">Wallet<small>up to $300</small></label>
+        </div>
+      </fieldset>
+      <fieldset class="field">
+        <legend>Items</legend>
+        <ul class="products" id="products"><li class="name">Loading catalogue…</li></ul>
+      </fieldset>
+      <div class="estimate"><span>Estimate</span><output id="estimate">$0.00</output></div>
+      <p>Inventory sets the final price when it holds the stock.</p>
+      <button class="primary" id="place" type="submit" disabled>Place order</button>
+      <button class="quiet" id="resend" type="button" disabled>Send the same request again</button>
+      <p class="feedback" id="feedback" role="status" aria-live="polite"></p>
+    </form>
+    <div class="hints">
+      <p>To see stock run out, order 4 woven cables. Only 3 are in stock.</p>
+      <p>To see a payment declined and the stock put back, pay for the 27 inch display with a wallet.</p>
+    </div>
+  </section>
+
+  <section class="rack" aria-labelledby="rack-title">
+    <div class="rack-head">
+      <h2 id="rack-title">Orders</h2>
+      <p>Newest first. Select an order to see every message it sent and received.</p>
+    </div>
+    <ol class="strips" id="strips"></ol>
+    <p class="empty" id="empty">No orders yet. Place one and watch it move through stock and payment.</p>
+  </section>
+</main>
+
+<script>
+(() => {
+  "use strict";
+
+  // ------------------------------------------------------------------ helpers
+  const $ = (sel) => document.querySelector(sel);
+  const money = (n, cur = "USD") => n == null ? "…" :
+    new Intl.NumberFormat("en-US", { style: "currency", currency: cur }).format(Number(n));
+  const shortId = (id) => id.replace(/-/g, "").slice(0, 6).toUpperCase();
+  const uuid = () => (crypto.randomUUID ? crypto.randomUUID() :
+    "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0; return (c === "x" ? r : (r & 3 | 8)).toString(16); }));
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  // ------------------------------------------------------------------ real backend (through nginx)
+  const live = {
+    async json(url, init) {
+      const res = await fetch(url, init);
+      if (res.status === 404) return null;
+      if (!res.ok) {
+        let detail = res.statusText;
+        try { detail = (await res.json()).detail || detail; } catch (_) {}
+        throw new Error(detail);
+      }
+      return { body: await res.json(), headers: res.headers };
+    },
+    async products() { return (await this.json("/inventory/api/v1/products")).body; },
+    async orders() { return (await this.json("/order/api/v1/orders?size=25")).body.items; },
+    async place(body, key) {
+      const r = await this.json("/order/api/v1/orders", {
+        method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": key },
+        body: JSON.stringify(body) });
+      return { order: r.body, replayed: r.headers.get("Idempotent-Replayed") === "true" };
+    },
+    async trail(id) { const r = await this.json(`/audit/api/v1/audit/orders/${id}`); return r ? r.body : []; },
+    async health() {
+      const out = {};
+      await Promise.all(["order", "inventory", "payment", "audit"].map(async (svc) => {
+        try { const r = await fetch(`/${svc}/actuator/health/readiness`); out[svc] = r.ok; }
+        catch (_) { out[svc] = false; }
+      }));
+      return out;
+    }
+  };
+
+  // ------------------------------------------------------------------ in-browser simulation
+  // Same rules as the services: conditional stock decrement, catalogue pricing, per-method limits,
+  // transient provider failures retried, compensation on decline, idempotency keys.
+  const sim = (() => {
+    const products = [
+      ["BRAID-CABLE-1M", "Braided USB-C cable, 1 m", 19, 1200], ["CHARGER-35W", "USB-C charger, 35 W dual port", 39, 500],
+      ["DISPLAY-27", "27 inch 5K display", 1599, 12], ["EARBUDS-ANC", "Wireless earbuds with noise control", 179, 240],
+      ["RIBBON-CABLE", "Limited edition woven cable", 29, 3], ["SLEEVE-14", "Wool laptop sleeve, 14 inch", 79, 150],
+      ["STYLUS-2", "Tablet stylus, second generation", 129, 90], ["WATCH-BAND-S", "Sport watch band, small", 49, 400]
+    ].map(([sku, name, unitPrice, available]) => ({ sku, name, unitPrice, currency: "USD", available, reserved: 0 }));
+    const limits = { CARD: 2500, UPI: 1000, WALLET: 300 };
+    const orders = [], keys = new Map(), trails = new Map();
+    const wait = (lo, hi) => new Promise(r => setTimeout(r, lo + Math.random() * (hi - lo)));
+    const log = (o, type, source) => trails.get(o.id).push({ type, source, occurredAt: new Date().toISOString() });
+    const move = (o, status, reason) => {
+      log(o, "OrderStatusChanged", "order-service");
+      Object.assign(o, { status, statusReason: reason ?? o.statusReason, updatedAt: new Date().toISOString() });
+    };
+
+    async function run(o) {
+      log(o, "ReserveInventory", "order-service");
+      await wait(250, 650);
+      const want = o.lines.map(l => [products.find(p => p.sku === l.sku), l.quantity]);
+      const short = want.find(([p, q]) => !p || p.available < q);
+      if (short) {
+        log(o, "InventoryRejected", "inventory-service");
+        return move(o, "REJECTED", `Not enough stock for ${short[0]?.sku ?? "unknown SKU"}`);
+      }
+      want.forEach(([p, q]) => { p.available -= q; p.reserved += q; });
+      o.lines.forEach(l => l.unitPrice = products.find(p => p.sku === l.sku).unitPrice);
+      o.totalAmount = o.lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0);
+      o.currency = "USD";
+      log(o, "InventoryReserved", "inventory-service");
+      move(o, "RESERVED", "Stock held");
+
+      log(o, "AuthorizePayment", "order-service");
+      await wait(300, 900);
+      let attempts = 1;
+      while (Math.random() < 0.08 && attempts < 3) { attempts++; await wait(80, 160); } // retried timeouts
+      if (o.totalAmount > limits[o.paymentMethod]) {
+        log(o, "PaymentDeclined", "payment-service");
+        move(o, "CANCELLING", `${o.paymentMethod} limit is ${limits[o.paymentMethod]} USD per transaction`);
+        log(o, "ReleaseInventory", "order-service");
+        await wait(200, 500);
+        want.forEach(([p, q]) => { p.available += q; p.reserved -= q; });
+        log(o, "InventoryReleased", "inventory-service");
+        return move(o, "CANCELLED");
+      }
+      o.paymentId = uuid();
+      log(o, "PaymentAuthorized", "payment-service");
+      move(o, "CONFIRMED", attempts > 1 ? `Payment authorised after ${attempts} attempts` : "Payment authorised");
+    }
+
+    return {
+      async products() { return products.map(p => ({ ...p })); },
+      async orders() { return orders.slice(0, 25).map(o => ({ ...o })); },
+      async place(body, key) {
+        const fingerprint = JSON.stringify(body);
+        if (keys.has(key)) {
+          const prior = keys.get(key);
+          if (prior.fingerprint !== fingerprint) throw new Error(`Idempotency-Key '${key}' was already used with a different request body`);
+          return { order: { ...prior.order }, replayed: true };
+        }
+        const merged = new Map();
+        body.lines.forEach(l => merged.set(l.sku, (merged.get(l.sku) || 0) + l.quantity));
+        const now = new Date().toISOString();
+        const o = { id: uuid(), customerId: body.customerId, paymentMethod: body.paymentMethod, status: "PENDING",
+          statusReason: null, totalAmount: null, currency: null, createdAt: now, updatedAt: now,
+          lines: [...merged].map(([sku, quantity]) => ({ sku, quantity, unitPrice: null })) };
+        orders.unshift(o); trails.set(o.id, []); keys.set(key, { fingerprint, order: o });
+        log(o, "OrderStatusChanged", "order-service");
+        run(o);
+        return { order: { ...o }, replayed: false };
+      },
+      async trail(id) { return (trails.get(id) || []).map(e => ({ ...e })); },
+      async health() { return { order: true, inventory: true, payment: true, audit: true }; }
+    };
+  })();
+
+  // ------------------------------------------------------------------ view model: status -> strip
+  const STEPS = {
+    PENDING:    { state: "holding",  steps: [["Placed", "done"], ["Stock", "now"], ["Payment", ""], ["Confirmed", ""]] },
+    RESERVED:   { state: "holding",  steps: [["Placed", "done"], ["Stock held", "done"], ["Payment", "now"], ["Confirmed", ""]] },
+    CONFIRMED:  { state: "cleared",  steps: [["Placed", "done"], ["Stock held", "done"], ["Paid", "done"], ["Confirmed", "done"]] },
+    REJECTED:   { state: "refused",  steps: [["Placed", "done"], ["Stock", "failed"], ["Payment", "skipped"], ["Rejected", "done"]] },
+    CANCELLING: { state: "holding",  steps: [["Placed", "done"], ["Stock held", "done"], ["Payment", "failed"], ["Returning stock", "now"]] },
+    CANCELLED:  { state: "returned", steps: [["Placed", "done"], ["Stock held", "done"], ["Payment", "failed"], ["Stock returned", "returned"]] }
+  };
+  const SOURCE = { "order-service": "Orders", "inventory-service": "Inventory", "payment-service": "Payments" };
+  const COMMANDS = new Set(["ReserveInventory", "ReleaseInventory", "AuthorizePayment"]);
+  const TYPE_TEXT = {
+    OrderStatusChanged: "Order status changed", ReserveInventory: "Hold stock", ReleaseInventory: "Return stock",
+    AuthorizePayment: "Authorise payment", InventoryReserved: "Stock held", InventoryRejected: "Stock refused",
+    InventoryReleased: "Stock returned", PaymentAuthorized: "Payment authorised", PaymentDeclined: "Payment declined"
+  };
+
+  // ------------------------------------------------------------------ state
+  let api = live;
+  let catalogue = [];
+  const qty = new Map();
+  const open = new Set();
+  const seen = new Set();
+  let lastRequest = null;
+
+  const form = $("#order-form"), placeBtn = $("#place"), resendBtn = $("#resend"), feedback = $("#feedback");
+  $("#customer").value = "cust-" + Math.floor(1000 + Math.random() * 9000);
+
+  function say(text, isError = false) {
+    feedback.textContent = text;
+    feedback.classList.toggle("error", isError);
+  }
+
+  // ------------------------------------------------------------------ composer
+  function renderProducts() {
+    const list = $("#products");
+    list.innerHTML = catalogue.map(p => {
+      const q = qty.get(p.sku) || 0;
+      const low = p.available <= 5;
+      return `<li>
+        <span class="name">${esc(p.name)}</span>
+        <span class="meta${low ? " low" : ""}">${money(p.unitPrice, p.currency)}, ${p.available.toLocaleString("en-US")} in stock</span>
+        <span class="stepper" role="group" aria-label="Quantity of ${esc(p.name)}">
+          <button type="button" data-sku="${esc(p.sku)}" data-d="-1" aria-label="One fewer" ${q === 0 ? "disabled" : ""}>−</button>
+          <output aria-live="polite">${q}</output>
+          <button type="button" data-sku="${esc(p.sku)}" data-d="1" aria-label="One more" ${q >= 10 ? "disabled" : ""}>+</button>
+        </span></li>`;
+    }).join("");
+    const total = catalogue.reduce((s, p) => s + (qty.get(p.sku) || 0) * p.unitPrice, 0);
+    $("#estimate").textContent = money(total);
+    placeBtn.disabled = total === 0;
+  }
+
+  $("#products").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-sku]");
+    if (!b) return;
+    const next = Math.max(0, Math.min(10, (qty.get(b.dataset.sku) || 0) + Number(b.dataset.d)));
+    qty.set(b.dataset.sku, next);
+    renderProducts();
+    const again = document.querySelector(`button[data-sku="${CSS.escape(b.dataset.sku)}"][data-d="${b.dataset.d}"]`);
+    if (again && !again.disabled) again.focus();
+  });
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const customer = $("#customer");
+    if (!customer.checkValidity()) {
+      say("Customer ID can use letters, numbers, dashes and underscores.", true);
+      customer.focus();
+      return;
+    }
+    const body = {
+      customerId: customer.value,
+      paymentMethod: form.elements.method.value,
+      lines: [...qty].filter(([, q]) => q > 0).map(([sku, quantity]) => ({ sku, quantity }))
+    };
+    lastRequest = { body, key: uuid() };
+    await send(lastRequest, false);
+  });
+
+  resendBtn.addEventListener("click", () => lastRequest && send(lastRequest, true));
+
+  async function send(request, isRetry) {
+    placeBtn.disabled = true;
+    placeBtn.textContent = "Placing…";
+    try {
+      const { order, replayed } = await api.place(request.body, request.key);
+      if (replayed) {
+        say(`Same order ${shortId(order.id)} returned. The retry did not create a second order.`);
+      } else {
+        say(`Order ${shortId(order.id)} placed.`);
+        qty.clear();
+      }
+      resendBtn.disabled = false;
+      await refresh();
+    } catch (err) {
+      say(`Order not placed: ${err.message}`, true);
+    } finally {
+      placeBtn.textContent = "Place order";
+      renderProducts();
+      if (isRetry) resendBtn.focus();
+    }
+  }
+
+  // ------------------------------------------------------------------ rack
+  async function renderStrips(orders) {
+    $("#empty").hidden = orders.length > 0;
+    const list = $("#strips");
+    const html = [];
+    for (const o of orders) {
+      const view = STEPS[o.status] || STEPS.PENDING;
+      const isOpen = open.has(o.id);
+      const arriving = !seen.has(o.id) && seen.size > 0;
+      html.push(`<li class="strip${arriving ? " arriving" : ""}" data-state="${view.state}" data-id="${o.id}">
+        <button class="strip-head" type="button" aria-expanded="${isOpen}" aria-controls="trail-${o.id}">
+          <span class="ident"><b>${shortId(o.id)}</b><small>${esc(o.customerId)}</small></span>
+          <span class="method">${esc(o.paymentMethod)}<small>${o.lines.reduce((s, l) => s + l.quantity, 0)} item${o.lines.reduce((s, l) => s + l.quantity, 0) === 1 ? "" : "s"}</small></span>
+          <ol class="steps" aria-label="Progress">${view.steps.map(([t, c]) => `<li class="${c}">${t}</li>`).join("")}</ol>
+          <span class="amount">${o.status === "REJECTED" ? "<small>Not charged</small>"
+            : money(o.totalAmount, o.currency || "USD") + (o.totalAmount == null ? "<small>awaiting price</small>" : "")}</span>
+        </button>
+        ${o.statusReason && o.status !== "CONFIRMED" && o.status !== "RESERVED" ? `<p class="reason">${esc(o.statusReason)}</p>` : ""}
+        <div class="trail" id="trail-${o.id}" ${isOpen ? "" : "hidden"}>${isOpen ? await trailHtml(o.id) : ""}</div>
+      </li>`);
+    }
+    orders.forEach(o => seen.add(o.id));
+    // Keep keyboard focus on the same strip across the periodic re-render.
+    const focusedId = document.activeElement?.closest?.(".strip")?.dataset.id;
+    list.innerHTML = html.join("");
+    if (focusedId) document.querySelector(`.strip[data-id="${focusedId}"] .strip-head`)?.focus({ preventScroll: true });
+  }
+
+  async function trailHtml(id) {
+    let events = [];
+    try { events = await api.trail(id); } catch (_) { return "<p>The audit log isn't reachable right now.</p>"; }
+    if (!events.length) return "<p>No messages recorded yet.</p>";
+    const t0 = Date.parse(events[0].occurredAt);
+    return `<h3>Messages</h3><ol>${events.map(e => `<li>
+        <time>+${Math.max(0, Date.parse(e.occurredAt) - t0)} ms</time>
+        <span class="${COMMANDS.has(e.type) ? "cmd" : ""}">${esc(TYPE_TEXT[e.type] || e.type)}</span>
+        <span class="who">${esc(SOURCE[e.source] || e.source)}</span></li>`).join("")}</ol>`;
+  }
+
+  $("#strips").addEventListener("click", async (e) => {
+    const head = e.target.closest(".strip-head");
+    if (!head) return;
+    const id = head.closest(".strip").dataset.id;
+    open.has(id) ? open.delete(id) : open.add(id);
+    await refresh();
+    document.querySelector(`.strip[data-id="${id}"] .strip-head`)?.focus();
+  });
+
+  // ------------------------------------------------------------------ polling
+  let busy = false;
+  async function refresh() {
+    if (busy) return;
+    busy = true;
+    try {
+      const [orders, products] = await Promise.all([api.orders(), api.products()]);
+      catalogue = products;
+      await renderStrips(orders);
+      if (!document.activeElement?.closest(".stepper")) renderProducts();
+    } catch (err) {
+      say("Lost contact with the order service. Retrying…", true);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function refreshHealth() {
+    const h = await api.health();
+    document.querySelectorAll("#health li").forEach(li => {
+      const up = h[li.dataset.svc];
+      li.className = up ? "up" : "down";
+      li.title = up ? "Ready" : "Not responding";
+    });
+  }
+
+  async function start() {
+    const forceDemo = new URLSearchParams(location.search).has("demo");
+    if (!forceDemo) {
+      try { catalogue = await live.products(); }
+      catch (_) { api = sim; }
+    } else {
+      api = sim;
+    }
+    if (api === sim) {
+      catalogue = await sim.products();
+      const n = $("#notice");
+      n.querySelector("p").textContent = "Demo mode: the saga runs in your browser with the same rules as the services. " +
+        "Run docker compose up and open this page on port 8080 to drive the real system.";
+      n.hidden = false;
+    }
+    renderProducts();
+    await refresh();
+    await refreshHealth();
+    setInterval(refresh, api === sim ? 400 : 1200);
+    setInterval(refreshHealth, 10000);
+  }
+
+  start();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+type Query {
+    order(id: ID!): Order
+    orders(status: OrderStatus, page: Int = 0, size: Int = 20): OrderPage!
+}
+
+enum OrderStatus { PENDING RESERVED CONFIRMED REJECTED CANCELLING CANCELLED }
+
+type Order {
+    id: ID!
+    customerId: String!
+    status: OrderStatus!
+    statusReason: String
+    paymentMethod: String!
+    "Decimal string, e.g. \"129.00\"; null until inventory has priced the order"
+    totalAmount: String
+    currency: String
+    paymentId: ID
+    lines: [OrderLine!]!
+    createdAt: String!
+    updatedAt: String!
+}
+
+type OrderLine {
+    sku: String!
+    quantity: Int!
+    unitPrice: String
+}
+
+type OrderPage {
+    items: [Order!]!
+    totalItems: Int!
+}
