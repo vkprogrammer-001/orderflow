@@ -122,22 +122,57 @@ Highlights:
 
 ## Load test
 
-`tools/loadgen` is a small Go CLI. It places orders concurrently, re-sends a share of requests with
-the same key to check idempotency under load, and reports latency percentiles and saga outcomes.
+`tools/loadgen` is a small Go CLI. It places orders at a fixed rate (open loop), re-sends a share
+of requests with the same key to check idempotency under load, then follows every order to its
+final state. Saga latency is measured with server timestamps (`updatedAt - createdAt`), so polling
+doesn't distort it.
 
 ```bash
 cd tools/loadgen
-go run . -base http://localhost:8080/order -n 2000 -c 64 -follow
+go run . -base http://localhost:8080/order -n 1500 -rate 50 -follow
 ```
 
-Record your own numbers here once you've run it on your machine:
+### Results
 
-```
-Placed ____ orders in ____ with 64 workers (____ req/s)
-  API latency   p50 ____  p95 ____  p99 ____
-Saga outcomes   CONFIRMED=____ CANCELLED=____ REJECTED=____
-  end-to-end    p50 ____  p95 ____
-```
+MacBook (Apple M4), all 9 containers running locally under Docker Desktop, fresh stock for each
+run, 1,500 orders per rate:
+
+| Rate | API p99 | Saga p50 | Saga p95 | Saga p99 | Completed correctly |
+|---|---|---|---|---|---|
+| 25/s | 17 ms | 633 ms | 847 ms | 1.14 s | 1500 / 1500 |
+| 50/s | 30 ms | 440 ms | 829 ms | 1.19 s | 1500 / 1500 |
+| 75/s | 33 ms | 507 ms | 872 ms | 1.25 s | 1500 / 1500 |
+| 150/s | 185 ms | 556 ms | 2.17 s | 2.39 s | 1500 / 1500 |
+| 250/s | 269 ms | 2.89 s | 4.24 s | 4.67 s | 1500 / 1500 |
+
+"Saga" is the time from order placed to its final state (confirmed, rejected or cancelled), across
+all four services.
+
+- **Latency is flat up to about 75 orders/s.** Queueing starts between 75 and 150, and at 250/s the
+  system is past saturation.
+- **Every order ended in a correct final state at every rate.** Under overload the saga slows down
+  but never loses or double-processes an order.
+- **Rejections are expected.** The load deliberately buys more than the seeded stock, so about a
+  third of orders are refused with "Not enough stock". A few Wallet payments are declined, and
+  their stock is returned.
+- **Most of the latency at low load is outbox polling,** at 200 ms per hop. Publishing right after
+  commit, or CDC (Debezium), would bring it down to tens of milliseconds.
+
+### What tuning got it here
+
+The first runs managed about 9 payment decisions per second. `tools/diagnose.sh` (per-stage
+throughput, outbox delay, consumer lag) found three problems:
+
+1. **Virtual threads on Java 21.** The Kafka client and parts of JDBC block inside `synchronized`
+   code, which pins virtual threads to their carrier threads and starves the consumers. They're
+   now off by default (`VIRTUAL_THREADS=true` to compare). JDK 24 fixes this (JEP 491).
+2. **Offset commit per record.** Switched to one commit per poll batch, which is safe because every
+   handler is idempotent. Concurrency is now one consumer per partition.
+3. **Connection-pool starvation.** API threads could take every DB connection, and the saga
+   consumers and outbox relay waited behind them. Request threads are now capped below the pool
+   size (a bulkhead).
+
+After these changes, payment throughput went from 9 to 74 decisions per second.
 
 ## Deploy
 
